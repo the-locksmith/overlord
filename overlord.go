@@ -8,15 +8,19 @@ import (
 	"net"
 	"net/url"
 	//"regexp"
+	"os/user"
 	"time"
 	//"strings"
 	//"net/http"
 	//"net/url"
 
 	//"libs/networking/ping"
+	. "libs/color"
 
 	"github.com/1lann/cete"
+	"github.com/DeanThompson/ginpprof"
 	"github.com/bluele/gcache"
+	"github.com/gin-gonic/gin"
 	"github.com/gocolly/colly"
 	"github.com/gocolly/colly/debug"
 	"github.com/gocolly/colly/proxy"
@@ -29,6 +33,7 @@ type App struct {
 	Database
 	Collector colly.Collector
 	Cache     gcache.Cache
+	Config
 }
 
 func (self App) SetCollectorLimits(parallelism int, delay time.Duration) {
@@ -125,44 +130,55 @@ type Server struct {
 ///// Main ////////////////////////////////////////////
 
 type Config struct {
-	Data string
+	Data  string
+	Temp  string
+	Debug bool
 }
 
 func (self App) PrintBanner() {
-	fmt.Println(Magenta(Bold("%v: Network Detector (v%v)")), self.Name, self.Version.String())
+	fmt.Println(Bold(Magenta("%v: Network Detector (v%v)")), self.Name, self.Version.String())
 	fmt.Println(Gray("=================================="))
 }
 
 func main() {
-	user := user.Current()
-
 	config := Config{
-		Data:  "~/.",
-		Home:  user.HomeDir,
+		Data:  "~/.local/share/overlord",
 		Temp:  os.TempDir(),
-		Cache: os.UserCacheDir(),
+		Debug: true,
 	}
+	fmt.Println("Config: ", config.Temp)
+	fmt.Println("Config: ", config.Debug)
+
+	if config.Debug {
+		fmt.Println(Bold(Blue("Debug=True")))
+		router := gin.Default()
+		ginpprof.Wrap(router)
+		gin.SetMode(gin.ReleaseMode)
+		go router.Run(":8080")
+	}
+
+	user, _ := user.Current()
 
 	// Cache
 	cache := gcache.New(20).
 		LRU().
 		Expiration(time.Hour).
-		LoaderFunc(func(key interface{}) (interface{}, error) {
-			// How?
-			return "ok", nil
-		}).
+		//LoaderFunc(func(key interface{}) (interface{}, error) {
+		//	// How?
+		//	return "ok", nil
+		//}).
 		Build()
-	cache.Set("key", "ok")
-	value, err := cache.Get("key")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("Get:", value)
+	//cache.Set("key", "ok")
+	//value, err := cache.Get("key")
+	//if err != nil {
+	//	panic(err)
+	//}
+	//fmt.Println("Get:", value)
 
 	// We will put a new item in the cache. It will expire after
 	// not being accessed via Value(key) for more than 5 seconds.
-	val := myStruct{"This is a test!", []byte{}}
-	cache.Add("someKey", 5*time.Second, &val)
+	//val := "test"
+	//cache.Add("someKey", 5*time.Second, &val)
 
 	os.Exit(0)
 	app := App{
@@ -173,7 +189,7 @@ func main() {
 		},
 		Cache:  cache,
 		Config: config,
-		Collector: colly.NewCollector(
+		Collector: *colly.NewCollector(
 			colly.Debugger(&debug.LogDebugger{}),
 			colly.IgnoreRobotsTxt(),
 			colly.MaxDepth(15),
