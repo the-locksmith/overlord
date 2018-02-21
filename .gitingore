@@ -1,0 +1,11 @@
+src/github.com
+src/github.com/*
+src/google.golang.org
+src/google.golang.org/*
+src/google.golang.org/
+src/github.com/
+src/golang.org
+src/golang.org/*
+src/golang.org/
+*.swp
+*.swo
