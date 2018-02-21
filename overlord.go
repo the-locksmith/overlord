@@ -3,6 +3,7 @@ package main
 import (
 	//"bytes"
 	"fmt"
+	"os"
 	//"io/ioutil"
 	"net"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	//"libs/networking/ping"
 
 	"github.com/1lann/cete"
+	"github.com/bluele/gcache"
 	"github.com/gocolly/colly"
 	"github.com/gocolly/colly/debug"
 	"github.com/gocolly/colly/proxy"
@@ -24,8 +26,9 @@ import (
 type App struct {
 	Name string
 	Version
-	Collector *colly.Collector
 	Database
+	Collector colly.Collector
+	Cache     gcache.Cache
 }
 
 func (self App) SetCollectorLimits(parallelism int, delay time.Duration) {
@@ -50,7 +53,7 @@ func (self Version) String() string {
 type Database struct {
 	Data cete.DB
 	// Cached
-	Servers     *cete.Range
+	Servers     cete.Range
 	ServerCount int64
 }
 
@@ -75,9 +78,9 @@ func (self App) SetCollectorProxies(socksProxies string) (err error) {
 	return err
 }
 
-func (self Database) CacheServers() *cete.Range {
+func (self Database) CacheServers() cete.Range {
 	// Cache Server Data
-	self.Servers = self.Data.Table("servers").All()
+	self.Servers = *(self.Data.Table("servers").All())
 	self.ServerCount, _ = self.Servers.Count()
 	return self.Servers
 }
@@ -100,10 +103,6 @@ func (self Database) PrintServers() {
 	}, 1)
 }
 
-func (self Database) InsertServer(s Server) error {
-	return self.Data.Table("servers").Set(s.Host, Server{})
-}
-
 ///// Server ///////////////////////////////////////////
 type Server struct {
 	CrawledAt   time.Time
@@ -124,13 +123,56 @@ type Server struct {
 }
 
 ///// Main ////////////////////////////////////////////
+
+type Config struct {
+	Data string
+}
+
+func (self App) PrintBanner() {
+	fmt.Println(Magenta(Bold("%v: Network Detector (v%v)")), self.Name, self.Version.String())
+	fmt.Println(Gray("=================================="))
+}
+
 func main() {
+	user := user.Current()
+
+	config := Config{
+		Data:  "~/.",
+		Home:  user.HomeDir,
+		Temp:  os.TempDir(),
+		Cache: os.UserCacheDir(),
+	}
+
+	// Cache
+	cache := gcache.New(20).
+		LRU().
+		Expiration(time.Hour).
+		LoaderFunc(func(key interface{}) (interface{}, error) {
+			// How?
+			return "ok", nil
+		}).
+		Build()
+	cache.Set("key", "ok")
+	value, err := cache.Get("key")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Get:", value)
+
+	// We will put a new item in the cache. It will expire after
+	// not being accessed via Value(key) for more than 5 seconds.
+	val := myStruct{"This is a test!", []byte{}}
+	cache.Add("someKey", 5*time.Second, &val)
+
+	os.Exit(0)
 	app := App{
-		Name: "Overlord",
-		Database: Database{
-			Data: InitDB("./servers_db/", "servers", []string{"Host", "IPAddress"}),
-		},
+		Name:    "Overlord",
 		Version: Version{0, 1, 0},
+		Database: Database{
+			Data: InitDB("./overlord_db/", "servers", []string{"Host", "IPAddress"}),
+		},
+		Cache:  cache,
+		Config: config,
 		Collector: colly.NewCollector(
 			colly.Debugger(&debug.LogDebugger{}),
 			colly.IgnoreRobotsTxt(),
@@ -145,6 +187,7 @@ func main() {
 			//),
 		),
 	}
+	app.PrintBanner()
 	defer app.Database.Data.Close()
 	app.SetCollectorLimits(2, 4)
 	///////////////////////////////////////////////////////////////
