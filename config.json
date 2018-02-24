@@ -1,0 +1,5 @@
+{
+	Data:    "~/.local/share/overlord/",
+	SeedURL: "https://coinmarketcap.com/currencies/volume/24-hour/",
+	Debug:   true
+}
